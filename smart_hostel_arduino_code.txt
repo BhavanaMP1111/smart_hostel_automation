@@ -1,0 +1,135 @@
+unsigned long startTime = 0;
+unsigned long totalTime = 0;
+
+bool deviceState = false;
+
+float power = 10.0; // LED 10W
+float energy = 0;
+float cost = 0;
+
+
+#include <WiFi.h>
+#include <PubSubClient.h>
+
+const char* ssid = "GSSS_AIML2";
+const char* password = "GSSS@1234";
+
+const char* mqtt_server = "192.168.3.140";
+const char* mqtt_user = "admin";
+const char* mqtt_pass = "admin";
+
+WiFiClient espClient;
+PubSubClient client(espClient);
+
+int ledPin = 26;
+
+void callback(char* topic, byte* payload, unsigned int length) {
+
+  String message = "";
+
+  for (int i = 0; i < length; i++) {
+    message += (char)payload[i];
+  }
+
+  Serial.print("Message received: ");
+  Serial.println(message);
+
+if (message == "ON" && deviceState == false) {
+
+  digitalWrite(ledPin, HIGH);
+
+  deviceState = true;
+
+  startTime = millis();
+
+  Serial.println("Device turned ON");
+}
+
+if (message == "OFF" && deviceState == true) {
+
+  digitalWrite(ledPin, LOW);
+
+  deviceState = false;
+
+  unsigned long endTime = millis();
+
+  unsigned long duration = endTime - startTime;
+
+  totalTime += duration;
+
+  float hours = duration / 3600000.0;
+
+  energy += (power * hours) / 1000.0;
+
+  cost = energy * 8;
+
+  Serial.print("Duration(ms): ");
+  Serial.println(duration);
+
+  Serial.print("Energy Used (kWh): ");
+  Serial.println(energy, 6);
+
+  Serial.print("Cost (₹): ");
+  Serial.println(cost,6);
+
+  String payload = String(energy) + "," + String(cost);
+
+  client.publish("r1/l1/data", payload.c_str());
+
+  Serial.println("Data sent to MQTT");
+}
+}
+
+void reconnect() {
+
+  while (!client.connected()) {
+
+    Serial.println("Connecting to MQTT...");
+
+    if (client.connect("ESP32Client", mqtt_user, mqtt_pass)) {
+
+      Serial.println("Connected to MQTT");
+
+      client.subscribe("r1/l1");
+
+    } else {
+
+      Serial.print("Failed, rc=");
+      Serial.print(client.state());
+
+      delay(2000);
+    }
+  }
+}
+
+void setup() {
+
+  Serial.begin(115200);
+
+  pinMode(ledPin, OUTPUT);
+  digitalWrite(ledPin, LOW);
+
+  WiFi.begin(ssid, password);
+
+  Serial.print("Connecting to WiFi");
+
+  while (WiFi.status() != WL_CONNECTED) {
+
+    delay(500);
+    Serial.print(".");
+  }
+
+  Serial.println("\nWiFi Connected");
+
+  client.setServer(mqtt_server, 1883);
+  client.setCallback(callback);
+}
+
+void loop() {
+
+  if (!client.connected()) {
+    reconnect();
+  }
+
+  client.loop();
+}
